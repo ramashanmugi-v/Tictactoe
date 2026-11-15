@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tic-Tac-Toe</title>
+<style>
+  body {
+    font-family: sans-serif;
+    text-align: center;
+    margin: 0;
+    min-height: 100vh;
+    color: #3d3d5c;
+    /* theme gradient: blue, lavender, pink */
+    background: linear-gradient(135deg, #b8d4f0, #cfc3ef, #f0bfd8);
+  }
+  h1 {
+    margin: 0;
+    padding-top: 30px;
+    font-size: 2.6rem;
+  }
+
+  /* status box */
+  #status {
+    display: inline-block;
+    font-size: 1.3rem;
+    font-weight: bold;
+    margin: 18px 0;
+    padding: 8px 22px;
+    border-radius: 999px;
+    background: #e4d7f7;
+    min-height: 1.6em;
+    transition: background 0.3s;
+  }
+  #status.x-turn { background: #f4b8d4; }
+  #status.o-turn { background: #a9cbf2; }
+  #status.win    { background: #a8e6c1; }
+  #status.draw   { background: #d3c4f3; }
+
+  /* 3x3 grid */
+  #board {
+    display: grid;
+    grid-template-columns: repeat(3, 100px);
+    gap: 10px;
+    justify-content: center;
+  }
+  .cell {
+    width: 100px; height: 100px;
+    font-size: 3.2rem; font-weight: bold;
+    background: #ffe3cf;
+    border: none;
+    border-radius: 14px;
+    cursor: pointer;
+    box-shadow: 0 5px 0 rgba(110,90,140,0.25);
+    transition: transform 0.15s, background 0.15s;
+  }
+  .cell:hover:not(.x):not(.o) { background: #ffd2b3; transform: translateY(-3px); }
+  .cell:active { transform: translateY(3px); box-shadow: 0 2px 0 rgba(110,90,140,0.25); }
+
+  .cell.x { color: #c2548f; }
+  .cell.o { color: #4a6fc0; }
+
+  .cell.win {
+    background: #b5ecc9;
+    box-shadow: 0 0 14px 3px #7fd9a2;
+    animation: pop 0.4s ease;
+  }
+  @keyframes pop { 50% { transform: scale(1.12); } }
+
+  /* gradient button (New game + Play again rendukkum) */
+  .btn {
+    margin-top: 28px;
+    padding: 12px 28px;
+    font-size: 1.05rem;
+    font-weight: bold;
+    color: #ffffff;
+    background: linear-gradient(135deg, #7ea6e0, #a590e0, #e08ab8);
+    border: none;
+    border-radius: 999px;
+    cursor: pointer;
+    box-shadow: 0 4px 0 rgba(110,90,140,0.3);
+  }
+  .btn:hover { filter: brightness(1.07); }
+  .btn:active { transform: translateY(3px); box-shadow: 0 1px 0 rgba(110,90,140,0.3); }
+
+  /* ---------- Full page result screen ---------- */
+  #overlay {
+    position: fixed;
+    inset: 0;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(207, 195, 239, 0.92);
+    z-index: 10;
+  }
+  #overlay.show {
+    display: flex;
+    animation: fadeIn 0.5s ease;
+  }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+  #overlayTitle {
+    font-size: clamp(2.5rem, 10vw, 5.5rem);
+    font-weight: bold;
+    margin: 0 20px;
+  }
+  #overlayTitle.x    { color: #c2548f; }
+  #overlayTitle.o    { color: #4a6fc0; }
+  #overlayTitle.draw { color: #7a5fc0; }
+
+  #overlaySub {
+    font-size: 1.4rem;
+    margin-top: 10px;
+  }
+  #overlay .btn { margin-top: 36px; font-size: 1.2rem; padding: 14px 36px; }
+
+  #confetti {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 20;
+  }
+</style>
+</head>
+<body>
+
+<h1>Tic-Tac-Toe</h1>
+<div id="status"></div>
+<div id="board"></div>
+<button class="btn" id="reset">New game</button>
+
+<!-- Full page win / draw announcement -->
+<div id="overlay">
+  <div id="overlayTitle"></div>
+  <div id="overlaySub"></div>
+  <button class="btn" id="playAgain">Play again</button>
+</div>
+
+<canvas id="confetti"></canvas>
+
+<script>
+  // ---------- Game state ----------
+  let board = Array(9).fill("");
+  let starter = "O";        // resetGame() ulla maathum, so mudhal game X start aagum
+  let current = "X";
+  let gameOver = false;
+  let overlayTimer = null;
+
+  const wins = [
+    [0,1,2], [3,4,5], [6,7,8],
+    [0,3,6], [1,4,7], [2,5,8],
+    [0,4,8], [2,4,6]
+  ];
+
+  const boardEl      = document.getElementById("board");
+  const statusEl     = document.getElementById("status");
+  const overlayEl    = document.getElementById("overlay");
+  const overlayTitle = document.getElementById("overlayTitle");
+  const overlaySub   = document.getElementById("overlaySub");
+
+  function setStatus(text, type) {
+    statusEl.textContent = text;
+    statusEl.className = type;
+  }
+
+  function showOverlay(title, sub, type) {
+    overlayTitle.textContent = title;
+    overlayTitle.className = type;
+    overlaySub.textContent = sub;
+    overlayTimer = setTimeout(() => overlayEl.classList.add("show"), 700);
+  }
+
+  function hideOverlay() {
+    clearTimeout(overlayTimer);
+    overlayEl.classList.remove("show");
+  }
+
+  function createBoard() {
+    boardEl.innerHTML = "";
+    for (let i = 0; i < 9; i++) {
+      const cell = document.createElement("button");
+      cell.className = "cell";
+      cell.dataset.index = i;
+      cell.addEventListener("click", handleClick);
+      boardEl.appendChild(cell);
+    }
+  }
+
+  function handleClick(e) {
+    const i = e.target.dataset.index;
+    if (board[i] !== "" || gameOver) return;
+
+    board[i] = current;
+    e.target.textContent = current;
+    e.target.classList.add(current.toLowerCase());
+
+    const line = checkWinner();
+    if (line) {
+      setStatus("Player " + current + " wins! 🎉", "win");
+      line.forEach(idx => boardEl.children[idx].classList.add("win"));
+      gameOver = true;
+      launchConfetti();
+      showOverlay("Player " + current + " wins! 🎉", "Congratulations!", current.toLowerCase());
+    } else if (board.every(c => c !== "")) {
+      setStatus("It's a draw!", "draw");
+      gameOver = true;
+      showOverlay("It's a draw! 🤝", "Nobody won this time", "draw");
+    } else {
+      current = current === "X" ? "O" : "X";
+      setStatus("Player " + current + "'s turn", current === "X" ? "x-turn" : "o-turn");
+    }
+  }
+
+  function checkWinner() {
+    for (const [a, b, c] of wins) {
+      if (board[a] !== "" && board[a] === board[b] && board[a] === board[c]) {
+        return [a, b, c];
+      }
+    }
+    return null;
+  }
+
+  function resetGame() {
+    board = Array(9).fill("");
+    starter = starter === "X" ? "O" : "X";   // ovvoru game kum starter maarum
+    current = starter;
+    gameOver = false;
+    hideOverlay();
+    stopConfetti();
+    setStatus("Player " + current + "'s turn", current === "X" ? "x-turn" : "o-turn");
+    createBoard();
+  }
+
+  // ---------- Confetti (full page) ----------
+  const canvas = document.getElementById("confetti");
+  const ctx = canvas.getContext("2d");
+  const colors = ["#f48fb1", "#80b3f0", "#b39ddb", "#7fd9a2", "#e08ab8", "#8fb4f5"];
+  let pieces = [];
+  let animId = null;
+  let endTime = 0;
+
+  function resizeCanvas() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  }
+  window.addEventListener("resize", resizeCanvas);
+  resizeCanvas();
+
+  function makePiece() {
+    return {
+      x: Math.random() * canvas.width,
+      y: -20 - Math.random() * canvas.height * 0.5,
+      size: 6 + Math.random() * 8,
+      color: colors[Math.floor(Math.random() * colors.length)],
+      speedY: 2 + Math.random() * 3,
+      speedX: -1.5 + Math.random() * 3,
+      angle: Math.random() * Math.PI * 2,
+      spin: -0.15 + Math.random() * 0.3
+    };
+  }
+
+  function launchConfetti() {
+    stopConfetti();
+    pieces = Array.from({ length: 160 }, makePiece);
+    endTime = Date.now() + 4000;
+    animate();
+  }
+
+  function animate() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const keepSpawning = Date.now() < endTime;
+
+    pieces.forEach((p, i) => {
+      p.y += p.speedY;
+      p.x += p.speedX;
+      p.angle += p.spin;
+
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.angle);
+      ctx.fillStyle = p.color;
+      ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size * 0.6);
+      ctx.restore();
+
+      if (p.y > canvas.height + 20) {
+        if (keepSpawning) pieces[i] = makePiece();
+        else pieces[i] = null;
+      }
+    });
+    pieces = pieces.filter(Boolean);
+
+    if (pieces.length > 0) {
+      animId = requestAnimationFrame(animate);
+    } else {
+      stopConfetti();
+    }
+  }
+
+  function stopConfetti() {
+    cancelAnimationFrame(animId);
+    pieces = [];
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }
+
+  document.getElementById("reset").addEventListener("click", resetGame);
+  document.getElementById("playAgain").addEventListener("click", resetGame);
+  resetGame();
+</script>
+</body>
+</html>
